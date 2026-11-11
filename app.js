@@ -63,9 +63,9 @@ async function saveTodoChange(operation) {
 
 function renderTodos() {
   const visibleTodos = todos.filter((todo) => {
-    if (activeFilter === "active") return !todo.completed;
+    if (activeFilter === "active") return !todo.archived && !todo.completed;
     if (activeFilter === "completed") return todo.completed;
-    return true;
+    return !todo.archived;
   });
 
   list.replaceChildren();
@@ -78,6 +78,7 @@ function renderTodos() {
     checkbox.className = "todo-checkbox";
     checkbox.type = "checkbox";
     checkbox.checked = todo.completed;
+    checkbox.disabled = todo.archived === true;
     checkbox.setAttribute("aria-label", `${todo.text} 완료`);
     checkbox.addEventListener("change", () => toggleTodo(todo.id));
 
@@ -107,13 +108,24 @@ function renderTodos() {
       text.className = "todo-text";
       text.textContent = todo.text;
 
-      const editButton = createActionButton("수정", "✎", "edit-button", () =>
-        editTodo(todo.id),
-      );
+      if (!todo.archived) {
+        const editButton = createActionButton("수정", "✎", "edit-button", () =>
+          editTodo(todo.id),
+        );
+        actions.append(editButton);
+      } else {
+        const restoreButton = createActionButton(
+          "다시 할 일로",
+          "다시 할 일로",
+          "restore-button",
+          () => restoreTodo(todo.id),
+        );
+        actions.append(restoreButton);
+      }
       const deleteButton = createActionButton("삭제", "×", "delete-button", () =>
         deleteTodo(todo.id),
       );
-      actions.append(editButton, deleteButton);
+      actions.append(deleteButton);
       item.append(checkbox, text, actions);
     }
 
@@ -127,9 +139,24 @@ function renderTodos() {
   }
 
   emptyState.hidden = visibleTodos.length > 0;
-  const remaining = todos.filter((todo) => !todo.completed).length;
+  const emptyTitle = document.querySelector("#empty-title");
+  const emptyDescription = document.querySelector("#empty-description");
+  if (activeFilter === "completed") {
+    emptyTitle.textContent = "완료한 할 일이 없어요";
+    emptyDescription.textContent = "할 일을 완료하면 여기에 모아 보여드려요.";
+  } else if (activeFilter === "active") {
+    emptyTitle.textContent = "진행 중인 할 일이 없어요";
+    emptyDescription.textContent = "새 할 일을 추가하거나 완료 항목에서 복원해 보세요.";
+  } else {
+    emptyTitle.textContent = "아직 할 일이 없어요";
+    emptyDescription.textContent = "위에서 오늘의 첫 할 일을 추가해 보세요.";
+  }
+
+  const remaining = todos.filter((todo) => !todo.completed && !todo.archived).length;
   remainingCount.textContent = `남은 할 일 ${remaining}개`;
-  clearCompletedButton.hidden = !todos.some((todo) => todo.completed);
+  clearCompletedButton.hidden =
+    activeFilter !== "all" ||
+    !todos.some((todo) => todo.completed && !todo.archived);
 }
 
 function createActionButton(label, icon, className, onClick) {
@@ -148,6 +175,7 @@ async function addTodo(text) {
     set(push(userTodosRef), {
       text,
       completed: false,
+      archived: false,
       createdAt: Date.now(),
     }),
   );
@@ -155,7 +183,7 @@ async function addTodo(text) {
 
 function toggleTodo(id) {
   const todo = todos.find((item) => item.id === id);
-  if (!todo) return;
+  if (!todo || todo.archived) return;
   return saveTodoChange(() =>
     update(ref(database, `users/${userId}/todos/${id}`), {
       completed: !todo.completed,
@@ -164,8 +192,19 @@ function toggleTodo(id) {
 }
 
 function editTodo(id) {
+  const todo = todos.find((item) => item.id === id);
+  if (!todo || todo.archived) return;
   editingTodoId = id;
   renderTodos();
+}
+
+function restoreTodo(id) {
+  return saveTodoChange(() =>
+    update(ref(database, `users/${userId}/todos/${id}`), {
+      completed: false,
+      archived: false,
+    }),
+  );
 }
 
 function saveEdit(id, inputElement) {
@@ -226,10 +265,14 @@ filterButtons.forEach((button) => {
 });
 
 clearCompletedButton.addEventListener("click", () => {
-  const deletions = todos
-    .filter((todo) => todo.completed)
-    .map((todo) => remove(ref(database, `users/${userId}/todos/${todo.id}`)));
-  void saveTodoChange(() => Promise.all(deletions));
+  const updates = Object.fromEntries(
+    todos
+      .filter((todo) => todo.completed && !todo.archived)
+      .map((todo) => [`${todo.id}/archived`, true]),
+  );
+  if (Object.keys(updates).length > 0) {
+    void saveTodoChange(() => update(userTodosRef, updates));
+  }
 });
 
 async function startApp() {

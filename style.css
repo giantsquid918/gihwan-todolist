@@ -298,6 +298,18 @@ h1 {
   color: #d65b54;
 }
 
+.icon-button.restore-button {
+  width: auto;
+  padding: 0 8px;
+  color: var(--accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.icon-button.restore-button:hover {
+  background: #f1f0ff;
+}
+
 .empty-state {
   padding: 20px 0 22px;
   text-align: center;
